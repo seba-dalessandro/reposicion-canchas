@@ -157,3 +157,8 @@ with check (
   status = 'voided'
   and app_private.has_role_at_least('Supervisor')
 );
+
+create policy "replenishments_delete_supervisor"
+on public.replenishments for delete
+to authenticated
+using (app_private.has_role_at_least('Supervisor'));

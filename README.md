@@ -92,7 +92,7 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 
 - Superadministrador: acceso total. Ningun usuario puede tener permisos superiores.
 - Administrador: administra datos operativos, importacion de SKUs y usuarios menores.
-- Supervisor: consulta reportes, carga reposiciones, anula reposiciones y puede cambiar estado manual de SKUs si `profiles.can_change_sku_manual_status = true`.
+- Supervisor: consulta reportes, carga reposiciones, anula/elimina reposiciones y puede cambiar estado manual de SKUs si `profiles.can_change_sku_manual_status = true`.
 - Usuario operativo: carga reposiciones y consulta sus propios registros.
 - Solo lectura: solo consulta.
 
@@ -103,8 +103,8 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 - Permisos basados en `public.profiles`; no se usa `user_metadata` para autorizacion.
 - Funciones `security definer` dentro de `app_private`, schema no expuesto a API.
 - Superadmin `admin@example.com` protegido por constraint y trigger.
-- No se permite borrar reposiciones; solo anulacion con motivo.
-- La anulacion esta limitada a Supervisor, Administrador y Superadministrador.
+- La anulacion requiere motivo y esta limitada a Supervisor, Administrador y Superadministrador.
+- La eliminacion definitiva de reposiciones esta limitada a Supervisor, Administrador y Superadministrador.
 - Usuario operativo no puede cargar SKUs anulados.
 - Supervisor o superior puede cargar SKU anulado solo tras confirmacion especial en UI.
 - Importacion de SKUs no pisa `status_manual`.

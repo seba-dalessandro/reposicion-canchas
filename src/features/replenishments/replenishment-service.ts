@@ -120,6 +120,12 @@ export async function voidReplenishment(id: string, reason: string) {
   if (error) throw error
 }
 
+export async function deleteReplenishment(id: string) {
+  const { error } = await supabase.from('replenishments').delete().eq('id', id)
+
+  if (error) throw error
+}
+
 function csvValue(value: unknown) {
   const text = value == null ? '' : String(value)
   return `"${text.replace(/"/g, '""')}"`

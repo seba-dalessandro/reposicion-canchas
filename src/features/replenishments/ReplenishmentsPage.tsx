@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Ban, Download, FileSpreadsheet, Save, Search } from 'lucide-react'
+import { Ban, Download, FileSpreadsheet, Save, Search, Trash2 } from 'lucide-react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { useAuth } from '../auth/useAuth'
 import type { AppRole } from '../../types/roles'
@@ -8,6 +8,7 @@ import {
   buildReplenishmentsCsv,
   buildReplenishmentsExcelXml,
   createReplenishment,
+  deleteReplenishment,
   downloadTextFile,
   loadReplenishmentLookups,
   loadReplenishments,
@@ -33,6 +34,10 @@ function canCreate(role: AppRole | undefined) {
 }
 
 function canVoid(role: AppRole | undefined) {
+  return role === 'Superadministrador' || role === 'Administrador' || role === 'Supervisor'
+}
+
+function canDelete(role: AppRole | undefined) {
   return role === 'Superadministrador' || role === 'Administrador' || role === 'Supervisor'
 }
 
@@ -89,6 +94,7 @@ export function ReplenishmentsPage() {
 
   const mayCreate = canCreate(profile?.role)
   const mayVoid = canVoid(profile?.role)
+  const mayDelete = canDelete(profile?.role)
 
   const selectedSku = useMemo(
     () => skus.find((sku) => sku.id === form.sku_id) ?? null,
@@ -235,6 +241,30 @@ export function ReplenishmentsPage() {
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo anular la reposicion.')
+    }
+  }
+
+  async function handleDelete(row: ReplenishmentRecord) {
+    if (!mayDelete) return
+
+    const confirmed = window.confirm(
+      `Eliminar definitivamente la reposicion de ${row.skus?.sku_code ?? 'SKU'} del ${row.fecha_operativa}?`,
+    )
+
+    if (!confirmed) return
+
+    setMessage(null)
+
+    try {
+      await deleteReplenishment(row.id)
+      setMessage('Reposicion eliminada correctamente.')
+      await refreshRows()
+      if (selected?.id === row.id) {
+        setSelected(null)
+        setActiveTab('historial')
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo eliminar la reposicion.')
     }
   }
 
@@ -453,17 +483,25 @@ export function ReplenishmentsPage() {
           <HistoryTable
             rows={rows}
             mayVoid={mayVoid}
+            mayDelete={mayDelete}
             onSelect={(row) => {
               setSelected(row)
               setActiveTab('detalle')
             }}
             onVoid={(row) => void handleVoid(row)}
+            onDelete={(row) => void handleDelete(row)}
           />
         </section>
       ) : null}
 
       {activeTab === 'detalle' ? (
-        <DetailPanel row={selected} mayVoid={mayVoid} onVoid={(row) => void handleVoid(row)} />
+        <DetailPanel
+          row={selected}
+          mayVoid={mayVoid}
+          mayDelete={mayDelete}
+          onVoid={(row) => void handleVoid(row)}
+          onDelete={(row) => void handleDelete(row)}
+        />
       ) : null}
     </div>
   )
@@ -524,13 +562,17 @@ function FilterSelect({
 function HistoryTable({
   rows,
   mayVoid,
+  mayDelete,
   onSelect,
   onVoid,
+  onDelete,
 }: {
   rows: ReplenishmentRecord[]
   mayVoid: boolean
+  mayDelete: boolean
   onSelect: (row: ReplenishmentRecord) => void
   onVoid: (row: ReplenishmentRecord) => void
+  onDelete: (row: ReplenishmentRecord) => void
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -584,6 +626,15 @@ function HistoryTable({
                       <Ban className="h-3.5 w-3.5" />
                       Anular
                     </button>
+                    <button
+                      type="button"
+                      disabled={!mayDelete}
+                      onClick={() => onDelete(row)}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-red-200 px-2 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-400/30 dark:text-red-200"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Eliminar
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -605,11 +656,15 @@ function HistoryTable({
 function DetailPanel({
   row,
   mayVoid,
+  mayDelete,
   onVoid,
+  onDelete,
 }: {
   row: ReplenishmentRecord | null
   mayVoid: boolean
+  mayDelete: boolean
   onVoid: (row: ReplenishmentRecord) => void
+  onDelete: (row: ReplenishmentRecord) => void
 }) {
   if (!row) {
     return (
@@ -641,15 +696,26 @@ function DetailPanel({
           <h2 className="text-lg font-semibold">Detalle de registro</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">{row.skus?.sku_code ?? 'SKU'} - {row.fecha_operativa}</p>
         </div>
-        <button
-          type="button"
-          disabled={!mayVoid || row.status === 'voided'}
-          onClick={() => onVoid(row)}
-          className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
-        >
-          <Ban className="h-4 w-4" />
-          Anular
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!mayVoid || row.status === 'voided'}
+            onClick={() => onVoid(row)}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
+          >
+            <Ban className="h-4 w-4" />
+            Anular
+          </button>
+          <button
+            type="button"
+            disabled={!mayDelete}
+            onClick={() => onDelete(row)}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-400/30 dark:text-red-200"
+          >
+            <Trash2 className="h-4 w-4" />
+            Eliminar
+          </button>
+        </div>
       </div>
       <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map(([label, value]) => (
