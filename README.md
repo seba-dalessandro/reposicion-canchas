@@ -82,7 +82,7 @@ O ejecutar en SQL Editor:
 
 Crear en Supabase Auth el usuario superadmin obligatorio:
 
-- Email: `sebadalessandro@gmail.com`
+- Email: `admin@example.com`
 - Rol: `Superadministrador`
 - Acceso: total
 
@@ -102,7 +102,7 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 - Grants explicitos para `authenticated`, necesario en proyectos nuevos de Supabase por el cambio de Data API.
 - Permisos basados en `public.profiles`; no se usa `user_metadata` para autorizacion.
 - Funciones `security definer` dentro de `app_private`, schema no expuesto a API.
-- Superadmin `sebadalessandro@gmail.com` protegido por constraint y trigger.
+- Superadmin `admin@example.com` protegido por constraint y trigger.
 - No se permite borrar reposiciones; solo anulacion con motivo.
 - La anulacion esta limitada a Supervisor, Administrador y Superadministrador.
 - Usuario operativo no puede cargar SKUs anulados.
@@ -285,7 +285,7 @@ npm audit --omit=dev
 
 - Variables configuradas en Vercel.
 - Migraciones Supabase aplicadas.
-- Usuario `sebadalessandro@gmail.com` creado y verificado como Superadministrador.
+- Usuario `admin@example.com` creado y verificado como Superadministrador.
 - RLS probado con roles reales.
 - Login/logout probado.
 - Importacion de SKUs probada con CSV y XLSX.
