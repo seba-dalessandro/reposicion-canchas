@@ -29,8 +29,9 @@ type SkuImport = Database['public']['Tables']['sku_imports']['Row']
 type SkuImportDetail = Database['public']['Tables']['sku_import_details']['Row']
 type Court = Database['public']['Tables']['courts']['Row']
 type Forklift = Database['public']['Tables']['forklifts']['Row']
-type PresetKind = 'courts' | 'forklifts'
-type PresetRecord = Court | Forklift
+type Driver = Database['public']['Tables']['drivers']['Row']
+type PresetKind = 'courts' | 'forklifts' | 'drivers'
+type PresetRecord = Court | Forklift | Driver
 type Tab = 'maestro' | 'importar' | 'opciones' | 'historial' | 'detalle'
 
 const tabs: Array<{ id: Tab; label: string }> = [
@@ -76,6 +77,7 @@ export function MasterDataPage() {
   const [skus, setSkus] = useState<Sku[]>([])
   const [courts, setCourts] = useState<Court[]>([])
   const [forklifts, setForklifts] = useState<Forklift[]>([])
+  const [drivers, setDrivers] = useState<Driver[]>([])
   const [imports, setImports] = useState<SkuImport[]>([])
   const [details, setDetails] = useState<SkuImportDetail[]>([])
   const [selectedImport, setSelectedImport] = useState<SkuImport | null>(null)
@@ -119,16 +121,19 @@ export function MasterDataPage() {
   }
 
   async function loadPresetOptions() {
-    const [courtsResult, forkliftsResult] = await Promise.all([
+    const [courtsResult, forkliftsResult, driversResult] = await Promise.all([
       supabase.from('courts').select('*').order('name', { ascending: true }),
       supabase.from('forklifts').select('*').order('name', { ascending: true }),
+      supabase.from('drivers').select('*').order('name', { ascending: true }),
     ])
 
     if (courtsResult.error) throw courtsResult.error
     if (forkliftsResult.error) throw forkliftsResult.error
+    if (driversResult.error) throw driversResult.error
 
     setCourts(courtsResult.data ?? [])
     setForklifts(forkliftsResult.data ?? [])
+    setDrivers(driversResult.data ?? [])
   }
 
   async function loadDetails(importRecord: SkuImport) {
@@ -244,7 +249,7 @@ export function MasterDataPage() {
   async function createPreset(kind: PresetKind) {
     if (!canManageOptions) return
 
-    const label = kind === 'courts' ? 'cancha' : 'autoelevador'
+    const label = kind === 'courts' ? 'cancha' : kind === 'forklifts' ? 'autoelevador' : 'chofer'
     const name = window.prompt(`Nombre del nuevo ${label}`)
 
     if (!name?.trim()) {
@@ -515,10 +520,10 @@ export function MasterDataPage() {
       ) : null}
 
       {activeTab === 'opciones' ? (
-        <section className="grid gap-5 lg:grid-cols-2">
+        <section className="grid gap-5 xl:grid-cols-3">
           {!canManageOptions ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200 lg:col-span-2">
-              Solo Superadministrador y Administrador pueden modificar Canchas y Autoelevadores.
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200 xl:col-span-3">
+              Solo Superadministrador y Administrador pueden modificar Canchas, Autoelevadores y Choferes.
             </div>
           ) : null}
           <PresetOptionsTable
@@ -540,6 +545,16 @@ export function MasterDataPage() {
             onRename={(row) => void renamePreset('forklifts', row)}
             onToggle={(row) => void togglePreset('forklifts', row)}
             onDelete={(row) => void deletePreset('forklifts', row)}
+          />
+          <PresetOptionsTable
+            title="Choferes"
+            singularLabel="chofer"
+            rows={drivers}
+            canManage={canManageOptions}
+            onCreate={() => void createPreset('drivers')}
+            onRename={(row) => void renamePreset('drivers', row)}
+            onToggle={(row) => void togglePreset('drivers', row)}
+            onDelete={(row) => void deletePreset('drivers', row)}
           />
         </section>
       ) : null}

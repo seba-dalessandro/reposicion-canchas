@@ -56,6 +56,12 @@ export type Database = {
         Update: { name?: string; is_active?: boolean; updated_at?: string }
         Relationships: []
       }
+      drivers: {
+        Row: { id: string; name: string; is_active: boolean; created_at: string; updated_at: string }
+        Insert: { id?: string; name: string; is_active?: boolean; created_at?: string; updated_at?: string }
+        Update: { name?: string; is_active?: boolean; updated_at?: string }
+        Relationships: []
+      }
       skus: {
         Row: {
           id: string
@@ -238,9 +244,124 @@ export type Database = {
         }
         Relationships: []
       }
+      replenishment_operations: {
+        Row: {
+          id: string
+          fecha_operativa: string
+          hora_operativa: string
+          forklift_id: string | null
+          court_id: string
+          status: 'active' | 'voided'
+          driver_id: string | null
+          created_by: string | null
+          voided_by: string | null
+          void_reason: string | null
+          created_at: string
+          updated_at: string
+          voided_at: string | null
+        }
+        Insert: {
+          id?: string
+          fecha_operativa: string
+          hora_operativa: string
+          forklift_id?: string | null
+          court_id: string
+          status?: 'active' | 'voided'
+          driver_id?: string | null
+          created_by?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          voided_at?: string | null
+        }
+        Update: {
+          fecha_operativa?: string
+          hora_operativa?: string
+          forklift_id?: string | null
+          court_id?: string
+          status?: 'active' | 'voided'
+          driver_id?: string | null
+          created_by?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
+          updated_at?: string
+          voided_at?: string | null
+        }
+        Relationships: []
+      }
+      replenishment_items: {
+        Row: {
+          id: string
+          operation_id: string
+          sku_id: string
+          cantidad_paletas: number
+          observacion: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          operation_id: string
+          sku_id: string
+          cantidad_paletas: number
+          observacion?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          operation_id?: string
+          sku_id?: string
+          cantidad_paletas?: number
+          observacion?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
-    Views: Record<string, never>
-    Functions: Record<string, never>
+    Views: {
+      v_replenishments_report: {
+        Row: {
+          operation_id: string
+          item_id: string
+          fecha_operativa: string
+          hora_operativa: string
+          operation_status: 'active' | 'voided'
+          driver_id: string | null
+          driver_name: string | null
+          forklift_id: string | null
+          forklift_name: string | null
+          court_id: string
+          court_name: string
+          sku_id: string
+          sku_code: string
+          sku_description: string
+          sku_status: SkuStatus
+          cantidad_paletas: number
+          observacion: string | null
+          created_by: string | null
+          operation_created_at: string
+          item_created_at: string
+          voided_by: string | null
+          void_reason: string | null
+          voided_at: string | null
+        }
+        Relationships: []
+      }
+    }
+    Functions: {
+      create_replenishment_operation: {
+        Args: {
+          fecha_operativa: string
+          hora_operativa: string
+          forklift_id: string | null
+          court_id: string
+          driver_id?: string | null
+          items: Json
+        }
+        Returns: string
+      }
+    }
     Enums: {
       app_role: AppRole
       replenishment_status: 'active' | 'voided'

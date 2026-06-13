@@ -1,16 +1,17 @@
 import { supabase } from '../../lib/supabase'
-import type { Database } from '../../types/database'
+import type { Database, Json } from '../../types/database'
 
 export type ReplenishmentStatus = 'active' | 'voided'
 export type SkuOption = Database['public']['Tables']['skus']['Row']
 export type CourtOption = Database['public']['Tables']['courts']['Row']
 export type ForkliftOption = Database['public']['Tables']['forklifts']['Row']
+export type DriverOption = Database['public']['Tables']['drivers']['Row']
 export type ProfileOption = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'email' | 'full_name'>
+export type ReplenishmentOperation = Database['public']['Tables']['replenishment_operations']['Row']
+export type ReplenishmentItem = Database['public']['Tables']['replenishment_items']['Row']
+export type ReplenishmentReportRow = Database['public']['Views']['v_replenishments_report']['Row']
 
-export type ReplenishmentRecord = Database['public']['Tables']['replenishments']['Row'] & {
-  skus: Pick<SkuOption, 'sku_code' | 'description' | 'effective_status'> | null
-  courts: Pick<CourtOption, 'name'> | null
-  forklifts: Pick<ForkliftOption, 'name'> | null
+export type ReplenishmentRecord = ReplenishmentReportRow & {
   profiles: ProfileOption | null
 }
 
@@ -24,104 +25,116 @@ export type ReplenishmentFilters = {
   status?: ReplenishmentStatus | 'all'
 }
 
-export type CreateReplenishmentInput = {
-  fecha_operativa: string
-  hora_operativa?: string | null
-  forklift_id?: string | null
-  court_id: string
+export type CreateReplenishmentItemInput = {
   sku_id: string
   cantidad_paletas: number
   observacion?: string | null
 }
 
-const replenishmentSelect = `
-  *,
-  skus:sku_id (sku_code, description, effective_status),
-  courts:court_id (name),
-  forklifts:forklift_id (name),
-  profiles:created_by (id, email, full_name)
-`
+export type CreateReplenishmentOperationInput = {
+  fecha_operativa: string
+  hora_operativa: string
+  driver_id?: string | null
+  forklift_id?: string | null
+  court_id: string
+  items: CreateReplenishmentItemInput[]
+}
 
 export async function loadReplenishmentLookups() {
-  const [skusResult, courtsResult, forkliftsResult, profilesResult] = await Promise.all([
+  const [skusResult, courtsResult, forkliftsResult, driversResult, profilesResult] = await Promise.all([
     supabase.from('skus').select('*').order('sku_code', { ascending: true }).limit(1000),
     supabase.from('courts').select('*').eq('is_active', true).order('name', { ascending: true }),
     supabase.from('forklifts').select('*').eq('is_active', true).order('name', { ascending: true }),
+    supabase.from('drivers').select('*').eq('is_active', true).order('name', { ascending: true }),
     supabase.from('profiles').select('id, email, full_name').eq('is_active', true).order('email', { ascending: true }),
   ])
 
   if (skusResult.error) throw skusResult.error
   if (courtsResult.error) throw courtsResult.error
   if (forkliftsResult.error) throw forkliftsResult.error
+  if (driversResult.error) throw driversResult.error
   if (profilesResult.error) throw profilesResult.error
 
   return {
     skus: skusResult.data ?? [],
     courts: courtsResult.data ?? [],
     forklifts: forkliftsResult.data ?? [],
+    drivers: driversResult.data ?? [],
     profiles: profilesResult.data ?? [],
   }
 }
 
+function withProfiles(rows: ReplenishmentReportRow[], profiles: ProfileOption[]) {
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
+
+  return rows.map((row) => ({
+    ...row,
+    profiles: row.created_by ? profilesById.get(row.created_by) ?? null : null,
+  }))
+}
+
 export async function loadReplenishments(filters: ReplenishmentFilters) {
   let query = supabase
-    .from('replenishments')
-    .select(replenishmentSelect)
+    .from('v_replenishments_report')
+    .select('*')
     .order('fecha_operativa', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(500)
+    .order('operation_created_at', { ascending: false })
+    .limit(1000)
 
   if (filters.fechaDesde) query = query.gte('fecha_operativa', filters.fechaDesde)
   if (filters.fechaHasta) query = query.lte('fecha_operativa', filters.fechaHasta)
   if (filters.courtId) query = query.eq('court_id', filters.courtId)
   if (filters.forkliftId) query = query.eq('forklift_id', filters.forkliftId)
   if (filters.userId) query = query.eq('created_by', filters.userId)
-  if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status)
+  if (filters.status && filters.status !== 'all') query = query.eq('operation_status', filters.status)
 
-  const { data, error } = await query
+  const [rowsResult, profilesResult] = await Promise.all([
+    query,
+    supabase.from('profiles').select('id, email, full_name').eq('is_active', true),
+  ])
 
-  if (error) throw error
+  if (rowsResult.error) throw rowsResult.error
+  if (profilesResult.error) throw profilesResult.error
 
-  const rows = (data ?? []) as unknown as ReplenishmentRecord[]
+  const rows = withProfiles(rowsResult.data ?? [], profilesResult.data ?? [])
   const skuText = filters.skuText?.trim().toLowerCase()
 
   if (!skuText) return rows
 
-  return rows.filter((row) => {
-    const sku = row.skus
-    return (
-      sku?.sku_code.toLowerCase().includes(skuText) ||
-      sku?.description.toLowerCase().includes(skuText)
-    )
-  })
+  return rows.filter(
+    (row) =>
+      row.sku_code.toLowerCase().includes(skuText) ||
+      row.sku_description.toLowerCase().includes(skuText),
+  )
 }
 
-export async function createReplenishment(input: CreateReplenishmentInput, userId: string) {
-  const { error } = await supabase.from('replenishments').insert({
-    ...input,
-    created_by: userId,
-    status: 'active',
-    hora_operativa: input.hora_operativa || null,
-    observacion: input.observacion?.trim() || null,
+export async function createReplenishmentOperation(input: CreateReplenishmentOperationInput) {
+  const items = input.items.map((item) => ({
+    sku_id: item.sku_id,
+    cantidad_paletas: item.cantidad_paletas,
+    observacion: item.observacion?.trim() || null,
+  })) satisfies Json[]
+
+  const { error } = await supabase.rpc('create_replenishment_operation', {
+    fecha_operativa: input.fecha_operativa,
+    hora_operativa: input.hora_operativa,
+    forklift_id: input.forklift_id || null,
+    court_id: input.court_id,
+    driver_id: input.driver_id || null,
+    items,
   })
 
   if (error) throw error
 }
 
-export async function voidReplenishment(id: string, reason: string) {
+export async function voidReplenishmentOperation(operationId: string, reason: string) {
   const { error } = await supabase
-    .from('replenishments')
+    .from('replenishment_operations')
     .update({
       status: 'voided',
       void_reason: reason.trim(),
     })
-    .eq('id', id)
-
-  if (error) throw error
-}
-
-export async function deleteReplenishment(id: string) {
-  const { error } = await supabase.from('replenishments').delete().eq('id', id)
+    .eq('id', operationId)
 
   if (error) throw error
 }
@@ -133,10 +146,13 @@ function csvValue(value: unknown) {
 
 export function buildReplenishmentsCsv(rows: ReplenishmentRecord[]) {
   const headers = [
+    'operation_id',
+    'item_id',
     'fecha_operativa',
     'hora_operativa',
     'fecha_hora_carga',
     'usuario',
+    'chofer',
     'autoelevador',
     'cancha',
     'sku',
@@ -148,16 +164,19 @@ export function buildReplenishmentsCsv(rows: ReplenishmentRecord[]) {
 
   const body = rows.map((row) =>
     [
+      row.operation_id,
+      row.item_id,
       row.fecha_operativa,
       row.hora_operativa,
-      row.created_at,
+      row.operation_created_at,
       row.profiles?.full_name ?? row.profiles?.email ?? '',
-      row.forklifts?.name ?? '',
-      row.courts?.name ?? '',
-      row.skus?.sku_code ?? '',
-      row.skus?.description ?? '',
+      row.driver_name ?? '',
+      row.forklift_name ?? '',
+      row.court_name,
+      row.sku_code,
+      row.sku_description,
       row.cantidad_paletas,
-      row.status,
+      row.operation_status,
       row.observacion ?? '',
     ].map(csvValue).join(','),
   )

@@ -35,7 +35,7 @@ function topOf(data: ChartDatum[]) {
 }
 
 export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): DashboardMetrics {
-  const activeRows = rows.filter((row) => row.status === 'active')
+  const activeRows = rows.filter((row) => row.operation_status === 'active')
   const palletsByCourt = new Map<string, number>()
   const palletsByForklift = new Map<string, number>()
   const palletsByDate = new Map<string, number>()
@@ -45,11 +45,11 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
 
   activeRows.forEach((row) => {
     const pallets = Math.trunc(Number(row.cantidad_paletas))
-    addToMap(palletsByCourt, row.courts?.name ?? 'Sin cancha', pallets)
-    addToMap(palletsByForklift, row.forklifts?.name ?? 'Sin autoelevador', pallets)
+    addToMap(palletsByCourt, row.court_name ?? 'Sin cancha', pallets)
+    addToMap(palletsByForklift, row.forklift_name ?? 'Sin autoelevador', pallets)
     addToMap(palletsByDate, row.fecha_operativa, pallets)
-    addToMap(palletsBySku, `${row.skus?.sku_code ?? 'SKU'} - ${row.skus?.description ?? 'Sin descripcion'}`, pallets)
-    addToMap(palletsBySkuStatus, row.skus?.effective_status === 'voided' ? 'SKU anulado' : 'SKU activo', pallets)
+    addToMap(palletsBySku, `${row.sku_code ?? 'SKU'} - ${row.sku_description ?? 'Sin descripcion'}`, pallets)
+    addToMap(palletsBySkuStatus, row.sku_status === 'voided' ? 'SKU anulado' : 'SKU activo', pallets)
   })
 
   rows.forEach((row) => {
@@ -74,7 +74,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
     lastRecord:
       rows
         .slice()
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null,
+        .sort((a, b) => new Date(b.operation_created_at).getTime() - new Date(a.operation_created_at).getTime())[0] ?? null,
     palletsByCourt: palletsByCourtData,
     palletsByForklift: palletsByForkliftData,
     palletsByDate: palletsByDateData,

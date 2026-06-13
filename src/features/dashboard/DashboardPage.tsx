@@ -102,9 +102,9 @@ export function DashboardPage() {
     },
     {
       title: 'Ultimo registro cargado',
-      value: metrics.lastRecord ? formatDateTime(metrics.lastRecord.created_at) : 'Sin datos',
+      value: metrics.lastRecord ? formatDateTime(metrics.lastRecord.operation_created_at) : 'Sin datos',
       detail: metrics.lastRecord
-        ? `${metrics.lastRecord.skus?.sku_code ?? 'SKU'} - ${metrics.lastRecord.courts?.name ?? 'Sin cancha'}`
+        ? `${metrics.lastRecord.sku_code ?? 'SKU'} - ${metrics.lastRecord.court_name ?? 'Sin cancha'}`
         : 'Aun no hay registros.',
       icon: CalendarClock,
     },
@@ -407,15 +407,15 @@ function OperationalTable({ rows }: { rows: ReplenishmentRecord[] }) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-t border-slate-100 dark:border-slate-800">
+              <tr key={row.item_id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-4 py-3">{row.fecha_operativa}</td>
-                <td className="px-4 py-3">{formatDateTime(row.created_at)}</td>
+                <td className="px-4 py-3">{formatDateTime(row.operation_created_at)}</td>
                 <td className="px-4 py-3">{row.profiles?.full_name ?? row.profiles?.email ?? '-'}</td>
-                <td className="px-4 py-3">{row.courts?.name ?? '-'}</td>
-                <td className="px-4 py-3">{row.forklifts?.name ?? '-'}</td>
-                <td className="px-4 py-3">{row.skus?.sku_code ?? '-'}</td>
+                <td className="px-4 py-3">{row.court_name ?? '-'}</td>
+                <td className="px-4 py-3">{row.forklift_name ?? '-'}</td>
+                <td className="px-4 py-3">{row.sku_code ?? '-'}</td>
                 <td className="px-4 py-3">{row.cantidad_paletas}</td>
-                <td className="px-4 py-3">{row.status === 'active' ? 'Activo' : 'Anulado'}</td>
+                <td className="px-4 py-3">{row.operation_status === 'active' ? 'Activo' : 'Anulado'}</td>
               </tr>
             ))}
             {rows.length === 0 ? (

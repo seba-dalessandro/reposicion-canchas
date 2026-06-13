@@ -79,10 +79,12 @@ O ejecutar en SQL Editor:
 4. `supabase/migrations/20260611130000_sku_master_import.sql`
 5. `supabase/migrations/20260611140000_replenishments_operational.sql`
 6. `supabase/migrations/20260611150000_security_performance_hardening.sql`
+7. `supabase/migrations/20260612120000_replenishments_delete_supervisor.sql`
+8. `supabase/migrations/20260612130000_replenishment_operations_items.sql`
 
 Crear en Supabase Auth el usuario superadmin obligatorio:
 
-- Email: `admin@example.com`
+- Email: `sebadalessandro@gmail.com`
 - Rol: `Superadministrador`
 - Acceso: total
 
@@ -91,8 +93,8 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 ## Roles y permisos
 
 - Superadministrador: acceso total. Ningun usuario puede tener permisos superiores.
-- Administrador: administra datos operativos, opciones de Canchas/Autoelevadores, importacion de SKUs y usuarios menores.
-- Supervisor: consulta reportes, carga reposiciones, anula/elimina reposiciones y puede cambiar estado manual de SKUs si `profiles.can_change_sku_manual_status = true`.
+- Administrador: administra datos operativos, opciones de Canchas/Autoelevadores/Choferes, importacion de SKUs y usuarios menores.
+- Supervisor: consulta reportes, carga reposiciones, anula reposiciones y puede cambiar estado manual de SKUs si `profiles.can_change_sku_manual_status = true`.
 - Usuario operativo: carga reposiciones y consulta sus propios registros.
 - Solo lectura: solo consulta.
 
@@ -102,10 +104,9 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 - Grants explicitos para `authenticated`, necesario en proyectos nuevos de Supabase por el cambio de Data API.
 - Permisos basados en `public.profiles`; no se usa `user_metadata` para autorizacion.
 - Funciones `security definer` dentro de `app_private`, schema no expuesto a API.
-- Superadmin `admin@example.com` protegido por constraint y trigger.
+- Superadmin `sebadalessandro@gmail.com` protegido por constraint y trigger.
 - La anulacion requiere motivo y esta limitada a Supervisor, Administrador y Superadministrador.
-- La eliminacion definitiva de reposiciones esta limitada a Supervisor, Administrador y Superadministrador.
-- La administracion de opciones preestablecidas de Canchas y Autoelevadores esta limitada a Administrador y Superadministrador.
+- La administracion de opciones preestablecidas de Canchas, Autoelevadores y Choferes esta limitada a Administrador y Superadministrador.
 - Usuario operativo no puede cargar SKUs anulados.
 - Supervisor o superior puede cargar SKU anulado solo tras confirmacion especial en UI.
 - Importacion de SKUs no pisa `status_manual`.
@@ -154,12 +155,13 @@ La pantalla `Reposiciones` permite:
 Campos de registro:
 
 - `fecha_operativa`: obligatoria, informada por usuario.
-- `hora_operativa`: opcional.
+- `hora_operativa`: obligatoria.
+- `chofer`: seleccion administrable desde `Maestros -> Opciones`.
 - `autoelevador`.
 - `cancha`: obligatoria.
-- `SKU`: buscable por codigo y descripcion.
-- `cantidad_paletas`: obligatoria y mayor a 0.
-- `observacion`: opcional.
+- `SKU`: multiples lineas buscables por codigo y descripcion.
+- `cantidad_paletas`: obligatoria y mayor a 0 por linea.
+- `observacion`: opcional por linea.
 
 `created_at` representa `fecha_hora_carga` automatica del sistema. `created_by` representa `usuario_id` automatico.
 
@@ -233,10 +235,43 @@ No se incluye promedio de paletas por hora por definicion funcional.
 - `previous_*`: valores previos en base.
 - `error_message`: validacion detectada.
 
-### `replenishments`
+### `replenishment_operations`
+
+Cabecera de cada operacion de reabastecimiento. Es el modelo usado para nuevas cargas.
 
 - `fecha_operativa`: fecha informada por usuario.
-- `hora_operativa`: hora opcional informada por usuario.
+- `hora_operativa`: hora obligatoria informada por usuario.
+- `created_at`: fecha/hora de carga automatica.
+- `created_by`: usuario que cargo.
+- `driver_id`: chofer seleccionado desde opciones.
+- `forklift_id`: autoelevador opcional.
+- `court_id`: cancha.
+- `status`: `active` o `voided`.
+- `void_reason`: motivo de anulacion.
+- `voided_by`: usuario que anulo.
+- `voided_at`: fecha/hora de anulacion.
+
+### `replenishment_items`
+
+Detalle de SKUs por operacion.
+
+- `operation_id`: cabecera asociada.
+- `sku_id`: SKU.
+- `cantidad_paletas`: paletas completas trasladadas.
+- `observacion`: comentario opcional por SKU.
+
+### `v_replenishments_report`
+
+Vista de reporte usada por historial, dashboard y exportaciones. Une cabecera, detalle, canchas, autoelevadores y SKUs.
+
+Incluye `driver_id` y `driver_name` para reportar el chofer seleccionado en la operacion.
+
+### `replenishments`
+
+Tabla legacy conservada temporalmente. No se usa para nuevas cargas.
+
+- `fecha_operativa`: fecha informada por usuario.
+- `hora_operativa`: hora informada por usuario.
 - `created_at`: fecha/hora de carga automatica.
 - `created_by`: usuario que cargo.
 - `forklift_id`: autoelevador.
@@ -263,9 +298,11 @@ No se incluye promedio de paletas por hora por definicion funcional.
 - Login/logout.
 - Roles y permisos.
 - Carga de reposicion.
-- Validaciones de fecha y cantidad.
-- Bloqueo de SKU anulado para Usuario operativo.
-- Confirmacion especial de SKU anulado para Supervisor o superior.
+- Carga de una operacion con cabecera unica y multiples SKUs.
+- Boton `+ Agregar SKU`.
+- Eliminacion de una fila de SKU antes de guardar.
+- Validaciones de fecha, hora, cancha, detalle, SKU y cantidad.
+- Bloqueo de SKU inactivo mediante buscador filtrado por `effective_status = active`.
 - Importacion de SKUs.
 - Filtros de historial y dashboard.
 - Dashboard responsive.
@@ -273,7 +310,17 @@ No se incluye promedio de paletas por hora por definicion funcional.
 - Anulacion con motivo.
 - Revision de seguridad RLS y ausencia de claves secretas en frontend.
 
-Comandos de verificacion local:
+### Pruebas realizadas en esta etapa
+
+- `npm run typecheck`: correcto.
+- `npm run lint`: correcto.
+- `npm run build`: correcto.
+- Busqueda de codigo: no quedan nuevas cargas contra `.from('replenishments')`.
+- Supabase remoto: `replenishment_operations`, `replenishment_items`, `v_replenishments_report` y RPC `create_replenishment_operation` existen en el proyecto `rlrtwklgperzntgtpsrh`.
+- Supabase remoto: RLS activo en tablas nuevas y en tabla legacy.
+- Supabase remoto: la tabla legacy `replenishments` sigue existiendo y no fue eliminada.
+
+Comandos de verificacion local recomendados:
 
 ```bash
 npm run typecheck
@@ -284,19 +331,25 @@ npm audit --omit=dev
 
 ## Checklist de publicacion
 
-- Variables configuradas en Vercel.
-- Migraciones Supabase aplicadas.
-- Usuario `admin@example.com` creado y verificado como Superadministrador.
-- RLS probado con roles reales.
-- Login/logout probado.
-- Importacion de SKUs probada con CSV y XLSX.
-- Reposicion probada con SKU activo y anulado.
-- Anulacion probada con motivo obligatorio.
-- Dashboard probado con filtros.
-- Responsive probado en PC, tablet y celular.
-- Exportaciones probadas.
-- `npm run build` correcto.
-- `npm audit --omit=dev` sin vulnerabilidades.
+- [ ] Build local sin errores.
+- [ ] Linter sin errores criticos.
+- [ ] Variables de entorno configuradas en Vercel.
+- [ ] Migracion aplicada en Supabase correcto.
+- [ ] RLS revisado.
+- [ ] Login/logout probado.
+- [ ] Rutas privadas probadas.
+- [ ] Roles probados: Superadministrador, Administrador, Supervisor, Usuario operativo, Solo lectura.
+- [ ] Usuario `sebadalessandro@gmail.com` verificado como Superadministrador.
+- [ ] Formulario cabecera + detalle probado.
+- [ ] Validaciones de fecha, hora, cancha, detalle, SKU y cantidad probadas.
+- [ ] Historial y dashboard probados contra `v_replenishments_report`.
+- [ ] Exportacion CSV y Excel probada.
+- [ ] Anulacion con motivo probada.
+- [ ] Responsive probado en PC, tablet y celular.
+- [ ] Modo oscuro y modo claro probados.
+- [ ] Deploy en Vercel probado.
+- [ ] README actualizado.
+- [ ] Cambios subidos a GitHub.
 
 ## Deploy en Vercel
 
