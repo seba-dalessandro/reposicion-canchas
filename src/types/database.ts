@@ -361,6 +361,16 @@ export type Database = {
         }
         Returns: string
       }
+      get_database_capacity: {
+        Args: Record<string, never>
+        Returns: {
+          used_bytes: number
+          limit_bytes: number
+          used_mb: number
+          limit_mb: number
+          usage_percent: number
+        }[]
+      }
     }
     Enums: {
       app_role: AppRole

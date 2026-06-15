@@ -13,8 +13,19 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Activity, CalendarClock, ClipboardList, Forklift, PackageCheck, RefreshCcw, Trophy } from 'lucide-react'
+import {
+  Activity,
+  CalendarClock,
+  ClipboardList,
+  Database as DatabaseIcon,
+  Forklift,
+  PackageCheck,
+  RefreshCcw,
+  Trophy,
+} from 'lucide-react'
 import { SectionHeader } from '../../components/SectionHeader'
+import { supabase } from '../../lib/supabase'
+import type { Database } from '../../types/database'
 import {
   loadReplenishmentLookups,
   loadReplenishments,
@@ -32,6 +43,8 @@ type Kpi = {
   detail: string
   icon: typeof PackageCheck
 }
+
+type DatabaseCapacity = Database['public']['Functions']['get_database_capacity']['Returns'][number]
 
 const chartColors = ['#4DA3C7', '#2E7D63', '#F2C94C', '#607D8B', '#D9534F', '#1F4E5F']
 
@@ -53,6 +66,23 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(value)
 }
 
+function formatMb(value: number) {
+  return new Intl.NumberFormat('es-AR', { maximumFractionDigits: value >= 10 ? 0 : 2 }).format(value)
+}
+
+function toNumber(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+async function loadDatabaseCapacity() {
+  const { data, error } = await supabase.rpc('get_database_capacity')
+
+  if (error) throw error
+
+  return data?.[0] ?? null
+}
+
 export function DashboardPage() {
   const [rows, setRows] = useState<ReplenishmentRecord[]>([])
   const [courts, setCourts] = useState<CourtOption[]>([])
@@ -64,6 +94,7 @@ export function DashboardPage() {
     status: 'all',
   })
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
+  const [databaseCapacity, setDatabaseCapacity] = useState<DatabaseCapacity | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -115,14 +146,16 @@ export function DashboardPage() {
     setMessage(null)
 
     try {
-      const [lookups, nextRows] = await Promise.all([
+      const [lookups, nextRows, nextCapacity] = await Promise.all([
         loadReplenishmentLookups(),
         loadReplenishments(nextFilters),
+        loadDatabaseCapacity(),
       ])
       setCourts(lookups.courts)
       setForklifts(lookups.forklifts)
       setProfiles(lookups.profiles)
       setRows(nextRows)
+      setDatabaseCapacity(nextCapacity)
       setLastUpdatedAt(new Date().toISOString())
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo cargar el dashboard.')
@@ -192,6 +225,8 @@ export function DashboardPage() {
           </button>
         </div>
       </form>
+
+      <DatabaseCapacityCard capacity={databaseCapacity} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map((kpi) => (
@@ -276,6 +311,40 @@ function FilterSelect({
         ))}
       </select>
     </label>
+  )
+}
+
+function DatabaseCapacityCard({ capacity }: { capacity: DatabaseCapacity | null }) {
+  const usedMb = toNumber(capacity?.used_mb)
+  const limitMb = toNumber(capacity?.limit_mb) || 500
+  const usagePercent = Math.min(100, Math.max(0, toNumber(capacity?.usage_percent)))
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700 dark:bg-teal-400/10 dark:text-teal-200">
+            <DatabaseIcon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">Supabase</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Capacidad BD</p>
+            <p className="mt-3 text-xs font-medium text-slate-700 dark:text-slate-200">
+              DB usada: {capacity ? `${formatMb(usedMb)} MB / ${formatMb(limitMb)} MB` : '-'}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Uso: {capacity ? `${usagePercent.toLocaleString('es-AR', { maximumFractionDigits: 2 })}%` : '-'}
+            </p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-full rounded-full bg-teal-500"
+                style={{ width: capacity ? `${usagePercent}%` : '0%' }}
+              />
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
   )
 }
 

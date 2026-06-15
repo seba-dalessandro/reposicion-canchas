@@ -15,7 +15,12 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { supabase } from '../../lib/supabase'
 import type { Database, SkuImportClassification, SkuStatus } from '../../types/database'
 import { useAuth } from '../auth/useAuth'
-import { buildSkuImportPreview, confirmSkuImport, type SkuImportPreview } from '../skus/sku-import-service'
+import {
+  buildSkuImportPreview,
+  confirmSkuImport,
+  type NewSkuStatusSelection,
+  type SkuImportPreview,
+} from '../skus/sku-import-service'
 import {
   canChangeSkuManualStatus,
   canImportSkus,
@@ -82,6 +87,7 @@ export function MasterDataPage() {
   const [details, setDetails] = useState<SkuImportDetail[]>([])
   const [selectedImport, setSelectedImport] = useState<SkuImport | null>(null)
   const [preview, setPreview] = useState<SkuImportPreview | null>(null)
+  const [newSkuStatuses, setNewSkuStatuses] = useState<NewSkuStatusSelection>({})
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -98,15 +104,34 @@ export function MasterDataPage() {
     )
   }, [query, skus])
 
-  async function loadSkus() {
-    const { data, error } = await supabase
-      .from('skus')
-      .select('*')
-      .order('sku_code', { ascending: true })
-      .limit(500)
+  const previewHasNewSkusWithoutStatus = useMemo(() => {
+    if (!preview) return false
+    return preview.rows.some((row) => row.classification === 'nuevo' && !newSkuStatuses[row.sku_code])
+  }, [newSkuStatuses, preview])
 
-    if (error) throw error
-    setSkus(data ?? [])
+  async function loadSkus() {
+    const pageSize = 1000
+    const allSkus: Sku[] = []
+    let page = 0
+
+    while (true) {
+      const from = page * pageSize
+      const to = from + pageSize - 1
+      const { data, error } = await supabase
+        .from('skus')
+        .select('*')
+        .order('sku_code', { ascending: true })
+        .range(from, to)
+
+      if (error) throw error
+
+      allSkus.push(...(data ?? []))
+
+      if (!data || data.length < pageSize) break
+      page += 1
+    }
+
+    setSkus(allSkus)
   }
 
   async function loadImports() {
@@ -176,7 +201,16 @@ export function MasterDataPage() {
     setMessage(null)
 
     try {
-      setPreview(await buildSkuImportPreview(file))
+      const nextPreview = await buildSkuImportPreview(file)
+      const nextNewSkuStatuses = nextPreview.rows.reduce<NewSkuStatusSelection>((acc, row) => {
+        if (row.classification === 'nuevo' && row.status_file) {
+          acc[row.sku_code] = row.status_file
+        }
+        return acc
+      }, {})
+
+      setPreview(nextPreview)
+      setNewSkuStatuses(nextNewSkuStatuses)
       setActiveTab('importar')
     } catch (error) {
       setPreview(null)
@@ -202,9 +236,10 @@ export function MasterDataPage() {
     setMessage(null)
 
     try {
-      const importId = await confirmSkuImport(preview, user.id)
+      const importId = await confirmSkuImport(preview, user.id, newSkuStatuses)
       setMessage('Importacion procesada correctamente.')
       setPreview(null)
+      setNewSkuStatuses({})
       await refreshAll()
       const importRecord = imports.find((item) => item.id === importId)
       if (importRecord) await loadDetails(importRecord)
@@ -214,6 +249,10 @@ export function MasterDataPage() {
     } finally {
       setIsImporting(false)
     }
+  }
+
+  function updateNewSkuStatus(skuCode: string, status: SkuStatus) {
+    setNewSkuStatuses((current) => ({ ...current, [skuCode]: status }))
   }
 
   async function updateManualStatus(sku: Sku, status: SkuStatus | null) {
@@ -486,7 +525,8 @@ export function MasterDataPage() {
                   disabled={
                     isImporting ||
                     preview.missingHeaders.length > 0 ||
-                    preview.totalRows === preview.summary.error + preview.summary.duplicado_archivo
+                    preview.totalRows === preview.summary.error + preview.summary.duplicado_archivo ||
+                    previewHasNewSkusWithoutStatus
                   }
                   onClick={() => void handleConfirmImport()}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -513,7 +553,15 @@ export function MasterDataPage() {
                 ))}
               </div>
 
-              <PreviewTable rows={preview.rows} />
+              {preview.summary.nuevo > 0 ? (
+                <NewSkuStatusPanel
+                  rows={preview.rows}
+                  statuses={newSkuStatuses}
+                  onChange={updateNewSkuStatus}
+                />
+              ) : null}
+
+              <PreviewTable rows={preview.rows} newSkuStatuses={newSkuStatuses} />
             </div>
           ) : null}
         </section>
@@ -620,16 +668,78 @@ export function MasterDataPage() {
   )
 }
 
-function PreviewTable({ rows }: { rows: SkuImportPreview['rows'] }) {
+function NewSkuStatusPanel({
+  rows,
+  statuses,
+  onChange,
+}: {
+  rows: SkuImportPreview['rows']
+  statuses: NewSkuStatusSelection
+  onChange: (skuCode: string, status: SkuStatus) => void
+}) {
+  const newRows = rows.filter((row) => row.classification === 'nuevo')
+
+  return (
+    <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+      <div className="mb-3">
+        <h3 className="text-base font-semibold">Estado inicial de SKUs nuevos</h3>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Se detectaron productos nuevos. Elegi el estado con el que va a trabajar la aplicacion para cada SKU.
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-800">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Articulo</th>
+              <th className="px-4 py-3">Descripcion</th>
+              <th className="px-4 py-3">Estado del archivo</th>
+              <th className="px-4 py-3">Estado elegido</th>
+            </tr>
+          </thead>
+          <tbody>
+            {newRows.map((row) => (
+              <tr key={`new-${row.rowNumber}-${row.sku_code}`} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td className="px-4 py-3 font-medium">{row.sku_code}</td>
+                <td className="px-4 py-3">{row.description}</td>
+                <td className="px-4 py-3">{row.status_file ? <StatusBadge status={row.status_file} /> : '-'}</td>
+                <td className="px-4 py-3">
+                  <select
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm outline-none ring-teal-600 focus:ring-2 dark:border-slate-700 dark:bg-slate-950"
+                    value={statuses[row.sku_code] ?? ''}
+                    onChange={(event) => onChange(row.sku_code, event.target.value as SkuStatus)}
+                  >
+                    <option value="">Seleccionar</option>
+                    <option value="active">Activo</option>
+                    <option value="voided">Anulado</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PreviewTable({
+  rows,
+  newSkuStatuses,
+}: {
+  rows: SkuImportPreview['rows']
+  newSkuStatuses: NewSkuStatusSelection
+}) {
   return (
     <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
-      <table className="w-full min-w-[920px] text-left text-sm">
+      <table className="w-full min-w-[1040px] text-left text-sm">
         <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
           <tr>
             <th className="px-4 py-3">Fila</th>
             <th className="px-4 py-3">Articulo</th>
             <th className="px-4 py-3">Descripcion</th>
             <th className="px-4 py-3">Anulado</th>
+            <th className="px-4 py-3">Estado elegido</th>
             <th className="px-4 py-3">Clasificacion</th>
             <th className="px-4 py-3">Observacion</th>
           </tr>
@@ -641,9 +751,21 @@ function PreviewTable({ rows }: { rows: SkuImportPreview['rows'] }) {
               <td className="px-4 py-3 font-medium">{row.sku_code}</td>
               <td className="px-4 py-3">{row.description}</td>
               <td className="px-4 py-3">{row.status_file ? <StatusBadge status={row.status_file} /> : '-'}</td>
+              <td className="px-4 py-3">
+                {row.classification === 'nuevo' && newSkuStatuses[row.sku_code] ? (
+                  <StatusBadge status={newSkuStatuses[row.sku_code]} />
+                ) : (
+                  '-'
+                )}
+              </td>
               <td className="px-4 py-3"><ClassificationBadge value={row.classification} /></td>
               <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                {row.error ?? (row.classification === 'modificado' ? 'Cambia descripcion o estado de archivo' : '-')}
+                {row.error ??
+                  (row.classification === 'nuevo'
+                    ? 'Nuevo producto: el estado elegido queda como estado manual inicial'
+                    : row.classification === 'modificado'
+                      ? 'Cambia descripcion o estado de archivo; se conserva el estado manual si existe'
+                      : '-')}
               </td>
             </tr>
           ))}

@@ -29,6 +29,8 @@ export type SkuImportPreview = {
   missingHeaders: string[]
 }
 
+export type NewSkuStatusSelection = Record<string, SkuStatus>
+
 const requiredHeaders = ['Articulo', 'Descripcion articulo', 'Anulado'] as const
 
 function emptySummary(): ImportSummary {
@@ -250,10 +252,20 @@ export async function buildSkuImportPreview(file: File): Promise<SkuImportPrevie
   }
 }
 
-export async function confirmSkuImport(preview: SkuImportPreview, userId: string) {
+export async function confirmSkuImport(
+  preview: SkuImportPreview,
+  userId: string,
+  newSkuStatuses: NewSkuStatusSelection = {},
+) {
   const validRows = preview.rows.filter(
     (row) => row.classification !== 'error' && row.classification !== 'duplicado_archivo',
   )
+  const missingNewStatus = validRows.find((row) => row.classification === 'nuevo' && !newSkuStatuses[row.sku_code])
+
+  if (missingNewStatus) {
+    throw new Error(`Selecciona el estado inicial para el SKU nuevo ${missingNewStatus.sku_code}.`)
+  }
+
   const now = new Date().toISOString()
 
   const { data: importRecord, error: importError } = await supabase
@@ -278,17 +290,40 @@ export async function confirmSkuImport(preview: SkuImportPreview, userId: string
 
   try {
     if (validRows.length > 0) {
-      const { error: upsertError } = await supabase.from('skus').upsert(
-        validRows.map((row) => ({
-          sku_code: row.sku_code,
-          description: row.description,
-          status_file: row.status_file ?? 'active',
-          last_file_import_at: now,
-        })),
-        { onConflict: 'sku_code' },
-      )
+      const existingRows = validRows.filter((row) => row.classification !== 'nuevo')
+      const newRows = validRows.filter((row) => row.classification === 'nuevo')
 
-      if (upsertError) throw upsertError
+      if (existingRows.length > 0) {
+        const { error: upsertExistingError } = await supabase.from('skus').upsert(
+          existingRows.map((row) => ({
+            sku_code: row.sku_code,
+            description: row.description,
+            status_file: row.status_file ?? 'active',
+            last_file_import_at: now,
+          })),
+          { onConflict: 'sku_code' },
+        )
+
+        if (upsertExistingError) throw upsertExistingError
+      }
+
+      if (newRows.length > 0) {
+        const { error: upsertNewError } = await supabase.from('skus').upsert(
+          newRows.map((row) => ({
+            sku_code: row.sku_code,
+            description: row.description,
+            status_file: row.status_file ?? 'active',
+            status_manual: newSkuStatuses[row.sku_code],
+            manual_status_changed_by: userId,
+            manual_status_changed_at: now,
+            manual_status_reason: 'Estado inicial definido por el usuario durante la importacion.',
+            last_file_import_at: now,
+          })),
+          { onConflict: 'sku_code' },
+        )
+
+        if (upsertNewError) throw upsertNewError
+      }
     }
 
     const codes = preview.rows.map((row) => row.sku_code).filter(Boolean)

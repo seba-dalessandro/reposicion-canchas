@@ -110,6 +110,7 @@ El trigger `app_private.handle_new_auth_user` crea su perfil como `Superadminist
 - Usuario operativo no puede cargar SKUs anulados.
 - Supervisor o superior puede cargar SKU anulado solo tras confirmacion especial en UI.
 - Importacion de SKUs no pisa `status_manual`.
+- Si una importacion detecta SKUs nuevos, el usuario debe elegir su estado inicial antes de confirmar; ese estado queda como `status_manual` y gobierna el uso operativo de la app.
 - Cambios manuales de SKU requieren motivo.
 
 ## Manual de uso
@@ -120,7 +121,7 @@ Ingresar desde `/login` con Supabase Auth. El layout privado protege todas las r
 
 ### Maestro de SKUs
 
-La pantalla `Maestros` permite buscar SKUs, importar archivo maestro, revisar preview, confirmar importacion, consultar historial y ver detalle.
+La pantalla `Maestros` permite buscar SKUs, importar archivo maestro, revisar preview, confirmar importacion, consultar historial y ver detalle. Cuando hay SKUs nuevos, la previsualizacion muestra esos productos y solicita definir si quedan Activos o Anulados antes de confirmar.
 
 Archivo admitido: CSV o XLSX.
 
@@ -178,6 +179,8 @@ La pantalla `Panel` muestra KPIs y graficos filtrables. Los filtros disponibles 
 - Estado.
 
 El dashboard es responsive para PC, tablet y celular. El modo oscuro es el predeterminado y el modo claro esta disponible desde el boton de tema.
+
+Incluye una tarjeta de capacidad de Supabase que consulta la RPC `get_database_capacity()` y muestra MB usados, limite visible de 500 MB y porcentaje de uso.
 
 ## Formulas del dashboard
 
