@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Ban, Download, FileSpreadsheet, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Ban, CheckCircle2, Download, FileSpreadsheet, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { useAuth } from '../auth/useAuth'
 import type { AppRole } from '../../types/roles'
@@ -88,6 +88,7 @@ export function ReplenishmentsPage() {
   const [rows, setRows] = useState<ReplenishmentRecord[]>([])
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [showSuccessToast, setShowSuccessToast] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [filters, setFilters] = useState<ReplenishmentFilters>({
@@ -106,6 +107,7 @@ export function ReplenishmentsPage() {
 
   const mayCreate = canCreate(profile?.role)
   const mayVoid = canVoid(profile?.role)
+  const mayViewCreationDate = profile?.role === 'Superadministrador'
   const activeSkus = useMemo(() => skus.filter((sku) => sku.effective_status === 'active'), [skus])
   const selectedRows = useMemo(
     () => rows.filter((row) => row.operation_id === selectedOperationId),
@@ -147,6 +149,13 @@ export function ReplenishmentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!showSuccessToast) return
+
+    const timeoutId = window.setTimeout(() => setShowSuccessToast(false), 3000)
+    return () => window.clearTimeout(timeoutId)
+  }, [showSuccessToast])
+
   function updateLine(id: string, patch: Partial<FormLine>) {
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
   }
@@ -161,7 +170,27 @@ export function ReplenishmentsPage() {
   function filteredSkusForLine(line: FormLine) {
     const value = line.sku_query.trim().toLowerCase()
     const source = value
-      ? activeSkus.filter((sku) => sku.sku_code.toLowerCase().includes(value) || sku.description.toLowerCase().includes(value))
+      ? activeSkus
+          .filter(
+            (sku) =>
+              sku.sku_code.toLowerCase().includes(value) ||
+              sku.description.toLowerCase().includes(value),
+          )
+          .sort((left, right) => {
+            const leftCode = left.sku_code.toLowerCase()
+            const rightCode = right.sku_code.toLowerCase()
+            const leftExact = leftCode === value
+            const rightExact = rightCode === value
+
+            if (leftExact !== rightExact) return leftExact ? -1 : 1
+
+            const leftStarts = leftCode.startsWith(value)
+            const rightStarts = rightCode.startsWith(value)
+
+            if (leftStarts !== rightStarts) return leftStarts ? -1 : 1
+
+            return leftCode.localeCompare(rightCode, 'es', { numeric: true })
+          })
       : activeSkus
 
     return source.slice(0, 20)
@@ -228,7 +257,7 @@ export function ReplenishmentsPage() {
         })),
       })
 
-      setMessage('Reposicion registrada correctamente.')
+      setShowSuccessToast(true)
       setForm({
         fecha_operativa: todayIsoDate(),
         hora_operativa: currentTime(),
@@ -238,7 +267,6 @@ export function ReplenishmentsPage() {
       })
       setLines([createLine()])
       await refreshRows()
-      setActiveTab('historial')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo registrar la reposicion.')
     } finally {
@@ -272,19 +300,33 @@ export function ReplenishmentsPage() {
   }
 
   function exportCsv() {
-    downloadTextFile('reposiciones.csv', buildReplenishmentsCsv(rows), 'text/csv;charset=utf-8')
+    downloadTextFile(
+      'reposiciones.csv',
+      buildReplenishmentsCsv(rows, mayViewCreationDate),
+      'text/csv;charset=utf-8',
+    )
   }
 
   function exportExcel() {
     downloadTextFile(
       'reposiciones.xls',
-      buildReplenishmentsExcelXml(rows),
+      buildReplenishmentsExcelXml(rows, mayViewCreationDate),
       'application/vnd.ms-excel;charset=utf-8',
     )
   }
 
   return (
     <div>
+      {showSuccessToast ? (
+        <div
+          role="status"
+          className="fixed right-4 top-4 z-50 flex items-center gap-3 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg dark:border-emerald-400/30 dark:bg-emerald-950 dark:text-emerald-100"
+        >
+          <CheckCircle2 className="h-5 w-5" />
+          Carga exitosa
+        </div>
+      ) : null}
+
       <SectionHeader
         title="Reposiciones"
         description="Registro de operaciones de reabastecimiento con cabecera unica y multiples SKUs."
@@ -526,6 +568,7 @@ export function ReplenishmentsPage() {
           <HistoryTable
             rows={rows}
             mayVoid={mayVoid}
+            mayViewCreationDate={mayViewCreationDate}
             onSelect={(operationId) => {
               setSelectedOperationId(operationId)
               setActiveTab('detalle')
@@ -539,6 +582,7 @@ export function ReplenishmentsPage() {
         <DetailPanel
           rows={selectedRows}
           mayVoid={mayVoid}
+          mayViewCreationDate={mayViewCreationDate}
           onVoid={(operationId, skuCode) => void handleVoid(operationId, skuCode)}
         />
       ) : null}
@@ -601,11 +645,13 @@ function FilterSelect({
 function HistoryTable({
   rows,
   mayVoid,
+  mayViewCreationDate,
   onSelect,
   onVoid,
 }: {
   rows: ReplenishmentRecord[]
   mayVoid: boolean
+  mayViewCreationDate: boolean
   onSelect: (operationId: string) => void
   onVoid: (operationId: string, skuCode?: string) => void
 }) {
@@ -617,7 +663,7 @@ function HistoryTable({
             <tr>
               <th className="px-4 py-3">Fecha operativa</th>
               <th className="px-4 py-3">Hora operativa</th>
-              <th className="px-4 py-3">Fecha creacion</th>
+              {mayViewCreationDate ? <th className="px-4 py-3">Fecha creacion</th> : null}
               <th className="px-4 py-3">Usuario</th>
               <th className="px-4 py-3">Chofer</th>
               <th className="px-4 py-3">Autoelevador</th>
@@ -635,7 +681,9 @@ function HistoryTable({
               <tr key={row.item_id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
                 <td className="px-4 py-3">{row.fecha_operativa}</td>
                 <td className="px-4 py-3">{row.hora_operativa}</td>
-                <td className="px-4 py-3">{formatDateTime(row.operation_created_at)}</td>
+                {mayViewCreationDate ? (
+                  <td className="px-4 py-3">{formatDateTime(row.operation_created_at)}</td>
+                ) : null}
                 <td className="px-4 py-3">{row.profiles?.full_name ?? row.profiles?.email ?? '-'}</td>
                 <td className="px-4 py-3">{row.driver_name ?? '-'}</td>
                 <td className="px-4 py-3">{row.forklift_name ?? '-'}</td>
@@ -669,7 +717,7 @@ function HistoryTable({
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-500" colSpan={13}>
+                <td className="px-4 py-8 text-center text-slate-500" colSpan={mayViewCreationDate ? 13 : 12}>
                   No hay reposiciones para mostrar.
                 </td>
               </tr>
@@ -684,10 +732,12 @@ function HistoryTable({
 function DetailPanel({
   rows,
   mayVoid,
+  mayViewCreationDate,
   onVoid,
 }: {
   rows: ReplenishmentRecord[]
   mayVoid: boolean
+  mayViewCreationDate: boolean
   onVoid: (operationId: string, skuCode?: string) => void
 }) {
   const firstRow = rows[0]
@@ -703,7 +753,9 @@ function DetailPanel({
   const fields = [
     ['Fecha operativa', firstRow.fecha_operativa],
     ['Hora operativa', firstRow.hora_operativa],
-    ['Fecha creacion', formatDateTime(firstRow.operation_created_at)],
+    ...(mayViewCreationDate
+      ? ([['Fecha creacion', formatDateTime(firstRow.operation_created_at)]] as const)
+      : []),
     ['Usuario', firstRow.profiles?.full_name ?? firstRow.profiles?.email ?? '-'],
     ['Chofer', firstRow.driver_name ?? '-'],
     ['Autoelevador', firstRow.forklift_name ?? '-'],
@@ -749,7 +801,7 @@ function DetailPanel({
                 <th className="px-4 py-3">Descripcion</th>
                 <th className="px-4 py-3">Paletas</th>
                 <th className="px-4 py-3">Observacion</th>
-                <th className="px-4 py-3">Item creado</th>
+                {mayViewCreationDate ? <th className="px-4 py-3">Item creado</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -759,7 +811,9 @@ function DetailPanel({
                   <td className="px-4 py-3">{row.sku_description}</td>
                   <td className="px-4 py-3">{row.cantidad_paletas}</td>
                   <td className="px-4 py-3">{row.observacion ?? '-'}</td>
-                  <td className="px-4 py-3">{formatDateTime(row.item_created_at)}</td>
+                  {mayViewCreationDate ? (
+                    <td className="px-4 py-3">{formatDateTime(row.item_created_at)}</td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

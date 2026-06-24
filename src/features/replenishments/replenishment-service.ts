@@ -40,23 +40,48 @@ export type CreateReplenishmentOperationInput = {
   items: CreateReplenishmentItemInput[]
 }
 
+async function loadActiveSkus() {
+  const pageSize = 1000
+  const skus: SkuOption[] = []
+  let page = 0
+
+  while (true) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
+    const { data, error } = await supabase
+      .from('skus')
+      .select('*')
+      .eq('effective_status', 'active')
+      .order('sku_code', { ascending: true })
+      .range(from, to)
+
+    if (error) throw error
+
+    skus.push(...(data ?? []))
+
+    if (!data || data.length < pageSize) break
+    page += 1
+  }
+
+  return skus
+}
+
 export async function loadReplenishmentLookups() {
   const [skusResult, courtsResult, forkliftsResult, driversResult, profilesResult] = await Promise.all([
-    supabase.from('skus').select('*').order('sku_code', { ascending: true }).limit(1000),
+    loadActiveSkus(),
     supabase.from('courts').select('*').eq('is_active', true).order('name', { ascending: true }),
     supabase.from('forklifts').select('*').eq('is_active', true).order('name', { ascending: true }),
     supabase.from('drivers').select('*').eq('is_active', true).order('name', { ascending: true }),
     supabase.from('profiles').select('id, email, full_name').eq('is_active', true).order('email', { ascending: true }),
   ])
 
-  if (skusResult.error) throw skusResult.error
   if (courtsResult.error) throw courtsResult.error
   if (forkliftsResult.error) throw forkliftsResult.error
   if (driversResult.error) throw driversResult.error
   if (profilesResult.error) throw profilesResult.error
 
   return {
-    skus: skusResult.data ?? [],
+    skus: skusResult,
     courts: courtsResult.data ?? [],
     forklifts: forkliftsResult.data ?? [],
     drivers: driversResult.data ?? [],
@@ -144,13 +169,13 @@ function csvValue(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`
 }
 
-export function buildReplenishmentsCsv(rows: ReplenishmentRecord[]) {
+export function buildReplenishmentsCsv(rows: ReplenishmentRecord[], includeCreationDate = true) {
   const headers = [
     'operation_id',
     'item_id',
     'fecha_operativa',
     'hora_operativa',
-    'fecha_hora_carga',
+    ...(includeCreationDate ? ['fecha_hora_carga'] : []),
     'usuario',
     'chofer',
     'autoelevador',
@@ -168,7 +193,7 @@ export function buildReplenishmentsCsv(rows: ReplenishmentRecord[]) {
       row.item_id,
       row.fecha_operativa,
       row.hora_operativa,
-      row.operation_created_at,
+      ...(includeCreationDate ? [row.operation_created_at] : []),
       row.profiles?.full_name ?? row.profiles?.email ?? '',
       row.driver_name ?? '',
       row.forklift_name ?? '',
@@ -192,8 +217,8 @@ function xmlValue(value: unknown) {
     .replace(/"/g, '&quot;')
 }
 
-export function buildReplenishmentsExcelXml(rows: ReplenishmentRecord[]) {
-  const csv = buildReplenishmentsCsv(rows)
+export function buildReplenishmentsExcelXml(rows: ReplenishmentRecord[], includeCreationDate = true) {
+  const csv = buildReplenishmentsCsv(rows, includeCreationDate)
   const tableRows = csv.split('\n').map((line) => {
     const values = line.match(/("([^"]|"")*"|[^,]+)/g) ?? []
     const cells = values
