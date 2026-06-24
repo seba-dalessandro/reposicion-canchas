@@ -15,7 +15,7 @@ export type DashboardMetrics = {
   lastRecord: ReplenishmentRecord | null
   palletsByCourt: ChartDatum[]
   palletsByForklift: ChartDatum[]
-  palletsByDate: ChartDatum[]
+  palletsByMonth: ChartDatum[]
   topSkus: ChartDatum[]
   recordsByUser: ChartDatum[]
   palletsBySkuStatus: ChartDatum[]
@@ -45,7 +45,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
   const activeRows = rows.filter((row) => row.operation_status === 'active')
   const palletsByCourt = new Map<string, number>()
   const palletsByForklift = new Map<string, number>()
-  const palletsByDate = new Map<string, number>()
+  const palletsByMonth = new Map<string, number>()
   const palletsBySku = new Map<string, { description: string; value: number }>()
   const recordsByUser = new Map<string, number>()
   const palletsBySkuStatus = new Map<string, number>()
@@ -54,7 +54,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
     const pallets = Math.trunc(Number(row.cantidad_paletas))
     addToMap(palletsByCourt, row.court_name ?? 'Sin cancha', pallets)
     addToMap(palletsByForklift, row.forklift_name ?? 'Sin autoelevador', pallets)
-    addToMap(palletsByDate, row.fecha_operativa, pallets)
+    addToMap(palletsByMonth, row.fecha_operativa.slice(0, 7), pallets)
     const skuCode = row.sku_code ?? 'SKU'
     const currentSku = palletsBySku.get(skuCode)
     palletsBySku.set(skuCode, {
@@ -73,7 +73,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
   const topSkus = toSortedSkuData(palletsBySku).slice(0, 10)
   const recordsByUserData = toSortedData(recordsByUser)
   const palletsBySkuStatusData = toSortedData(palletsBySkuStatus)
-  const palletsByDateData = Array.from(palletsByDate.entries())
+  const palletsByMonthData = Array.from(palletsByMonth.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -89,7 +89,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
         .sort((a, b) => new Date(b.operation_created_at).getTime() - new Date(a.operation_created_at).getTime())[0] ?? null,
     palletsByCourt: palletsByCourtData,
     palletsByForklift: palletsByForkliftData,
-    palletsByDate: palletsByDateData,
+    palletsByMonth: palletsByMonthData,
     topSkus,
     recordsByUser: recordsByUserData,
     palletsBySkuStatus: palletsBySkuStatusData,

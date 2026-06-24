@@ -1,13 +1,9 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,6 +22,7 @@ import {
 import { SectionHeader } from '../../components/SectionHeader'
 import { supabase } from '../../lib/supabase'
 import type { Database } from '../../types/database'
+import { useAuth } from '../auth/useAuth'
 import {
   loadReplenishmentLookups,
   loadReplenishments,
@@ -45,8 +42,6 @@ type Kpi = {
 }
 
 type DatabaseCapacity = Database['public']['Functions']['get_database_capacity']['Returns'][number]
-
-const chartColors = ['#4DA3C7', '#2E7D63', '#F2C94C', '#607D8B', '#D9534F', '#1F4E5F']
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10)
@@ -84,6 +79,7 @@ async function loadDatabaseCapacity() {
 }
 
 export function DashboardPage() {
+  const { profile } = useAuth()
   const [rows, setRows] = useState<ReplenishmentRecord[]>([])
   const [courts, setCourts] = useState<CourtOption[]>([])
   const [forklifts, setForklifts] = useState<ForkliftOption[]>([])
@@ -241,21 +237,18 @@ export function DashboardPage() {
         <ChartCard title="Paletas por autoelevador" description="Muestra el movimiento por equipo para identificar concentracion de uso o carga operativa.">
           <BarChartView data={metrics.palletsByForklift} color="#2E7D63" />
         </ChartCard>
-        <ChartCard title="Paletas por fecha operativa" description="Permite ver la evolucion diaria de paletas repuestas segun la fecha declarada por el usuario.">
-          <AreaChartView data={metrics.palletsByDate} />
+        <ChartCard title="Paletas por mes operativo" description="Total mensual de paletas repuestas, agrupado segun la fecha operativa declarada.">
+          <BarChartView data={metrics.palletsByMonth} color="#4DA3C7" showValues />
         </ChartCard>
         <ChartCard title="Top 10 SKUs repuestos" description="Ranking de los SKUs con mayor cantidad de paletas activas en el periodo seleccionado.">
           <TopSkuChartView data={metrics.topSkus} />
         </ChartCard>
-        <ChartCard title="Registros por usuario" description="Cuenta la cantidad de registros cargados por usuario para seguimiento de actividad.">
-          <BarChartView data={metrics.recordsByUser} color="#607D8B" />
-        </ChartCard>
-        <ChartCard title="Paletas por estado del SKU" description="Distribuye las paletas segun el estado efectivo del SKU al momento de consultar los datos.">
-          <PieChartView data={metrics.palletsBySkuStatus} />
-        </ChartCard>
       </section>
 
-      <OperationalTable rows={rows.slice(0, 20)} />
+      <OperationalTable
+        rows={rows}
+        showAdministrativeColumns={profile?.role === 'Superadministrador'}
+      />
 
       <DocumentationSections />
     </div>
@@ -383,19 +376,37 @@ function EmptyChart() {
   )
 }
 
-function BarChartView({ data, color = '#4DA3C7' }: { data: ChartDatum[]; color?: string }) {
+function BarChartView({
+  data,
+  color = '#4DA3C7',
+  showValues = false,
+}: {
+  data: ChartDatum[]
+  color?: string
+  showValues?: boolean
+}) {
   if (data.length === 0) return <EmptyChart />
   const maxValue = Math.max(...data.map((item) => item.value))
   const yTicks = buildIntegerTicks(maxValue)
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 46 }}>
+      <BarChart data={data} margin={{ top: showValues ? 24 : 8, right: 8, left: 0, bottom: 46 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
         <XAxis dataKey="name" angle={-28} textAnchor="end" interval={0} height={70} tick={{ fill: '#94A3B8', fontSize: 11 }} />
         <YAxis allowDecimals={false} ticks={yTicks} tick={{ fill: '#94A3B8', fontSize: 12 }} />
         <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#CBD5E1' }} />
-        <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]}>
+          {showValues ? (
+            <LabelList
+              dataKey="value"
+              position="top"
+              fill="#94A3B8"
+              fontSize={12}
+              formatter={(value) => formatNumber(Number(value ?? 0))}
+            />
+          ) : null}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )
@@ -429,24 +440,6 @@ function TopSkuChartView({ data }: { data: ChartDatum[] }) {
   )
 }
 
-function AreaChartView({ data }: { data: ChartDatum[] }) {
-  if (data.length === 0) return <EmptyChart />
-  const maxValue = Math.max(...data.map((item) => item.value))
-  const yTicks = buildIntegerTicks(maxValue)
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 16 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
-        <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 12 }} />
-        <YAxis allowDecimals={false} ticks={yTicks} tick={{ fill: '#94A3B8', fontSize: 12 }} />
-        <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#CBD5E1' }} />
-        <Area type="monotone" dataKey="value" stroke="#4DA3C7" fill="#4DA3C7" fillOpacity={0.22} />
-      </AreaChart>
-    </ResponsiveContainer>
-  )
-}
-
 function buildIntegerTicks(maxValue: number) {
   const safeMax = Math.max(1, Math.ceil(maxValue))
   const tickCount = Math.min(5, safeMax + 1)
@@ -464,60 +457,62 @@ function buildIntegerTicks(maxValue: number) {
   return ticks
 }
 
-function PieChartView({ data }: { data: ChartDatum[] }) {
-  if (data.length === 0) return <EmptyChart />
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <PieChart>
-        <Tooltip contentStyle={{ borderRadius: 8, borderColor: '#CBD5E1' }} />
-        <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={2} label>
-          {data.map((entry, index) => (
-            <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
-          ))}
-        </Pie>
-      </PieChart>
-    </ResponsiveContainer>
-  )
-}
-
-function OperationalTable({ rows }: { rows: ReplenishmentRecord[] }) {
+function OperationalTable({
+  rows,
+  showAdministrativeColumns,
+}: {
+  rows: ReplenishmentRecord[]
+  showAdministrativeColumns: boolean
+}) {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="border-b border-slate-200 p-4 dark:border-slate-800">
         <h2 className="text-base font-semibold">Detalle operativo reciente</h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Primeros 20 registros resultantes de los filtros aplicados.</p>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          Se muestran 15 filas por vez. Desplazate para consultar todos los registros filtrados.
+        </p>
       </div>
-      <div className="overflow-x-auto">
+      <div className="max-h-[700px] overflow-auto">
         <table className="w-full min-w-[980px] text-left text-sm">
-          <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+          <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-950 dark:text-slate-400">
             <tr>
               <th className="px-4 py-3">Fecha operativa</th>
-              <th className="px-4 py-3">Carga</th>
-              <th className="px-4 py-3">Usuario</th>
+              {showAdministrativeColumns ? <th className="px-4 py-3">Carga</th> : null}
+              {showAdministrativeColumns ? <th className="px-4 py-3">Usuario</th> : null}
               <th className="px-4 py-3">Cancha</th>
               <th className="px-4 py-3">Autoelevador</th>
               <th className="px-4 py-3">SKU</th>
               <th className="px-4 py-3">Paletas</th>
-              <th className="px-4 py-3">Estado</th>
+              {showAdministrativeColumns ? <th className="px-4 py-3">Estado</th> : null}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.item_id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-4 py-3">{row.fecha_operativa}</td>
-                <td className="px-4 py-3">{formatDateTime(row.operation_created_at)}</td>
-                <td className="px-4 py-3">{row.profiles?.full_name ?? row.profiles?.email ?? '-'}</td>
+                {showAdministrativeColumns ? (
+                  <td className="px-4 py-3">{formatDateTime(row.operation_created_at)}</td>
+                ) : null}
+                {showAdministrativeColumns ? (
+                  <td className="px-4 py-3">{row.profiles?.full_name ?? row.profiles?.email ?? '-'}</td>
+                ) : null}
                 <td className="px-4 py-3">{row.court_name ?? '-'}</td>
                 <td className="px-4 py-3">{row.forklift_name ?? '-'}</td>
                 <td className="px-4 py-3">{row.sku_code ?? '-'}</td>
                 <td className="px-4 py-3">{row.cantidad_paletas}</td>
-                <td className="px-4 py-3">{row.operation_status === 'active' ? 'Activo' : 'Anulado'}</td>
+                {showAdministrativeColumns ? (
+                  <td className="px-4 py-3">{row.operation_status === 'active' ? 'Activo' : 'Anulado'}</td>
+                ) : null}
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>Sin registros para mostrar.</td>
+                <td
+                  className="px-4 py-8 text-center text-slate-500"
+                  colSpan={showAdministrativeColumns ? 8 : 5}
+                >
+                  Sin registros para mostrar.
+                </td>
               </tr>
             ) : null}
           </tbody>
