@@ -245,7 +245,7 @@ export function DashboardPage() {
           <AreaChartView data={metrics.palletsByDate} />
         </ChartCard>
         <ChartCard title="Top 10 SKUs repuestos" description="Ranking de los SKUs con mayor cantidad de paletas activas en el periodo seleccionado.">
-          <BarChartView data={metrics.topSkus} color="#1F4E5F" />
+          <TopSkuChartView data={metrics.topSkus} />
         </ChartCard>
         <ChartCard title="Registros por usuario" description="Cuenta la cantidad de registros cargados por usuario para seguimiento de actividad.">
           <BarChartView data={metrics.recordsByUser} color="#607D8B" />
@@ -398,6 +398,34 @@ function BarChartView({ data, color = '#4DA3C7' }: { data: ChartDatum[]; color?:
         <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+function TopSkuChartView({ data }: { data: ChartDatum[] }) {
+  if (data.length === 0) return <EmptyChart />
+
+  return (
+    <div className="h-full overflow-auto rounded-md border border-slate-200 dark:border-slate-800">
+      <div className="grid grid-cols-[72px_minmax(0,1fr)_72px] gap-3 border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+        <span>SKU</span>
+        <span>Descripcion</span>
+        <span className="text-right">Total</span>
+      </div>
+      {data.map((item) => (
+        <div
+          key={item.name}
+          className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-sm last:border-0 dark:border-slate-800"
+        >
+          <strong className="font-semibold text-slate-950 dark:text-white">{item.name}</strong>
+          <span className="truncate text-slate-600 dark:text-slate-300" title={item.description}>
+            {item.description ?? 'Sin descripcion'}
+          </span>
+          <strong className="text-right font-semibold text-teal-700 dark:text-teal-200">
+            {formatNumber(item.value)}
+          </strong>
+        </div>
+      ))}
+    </div>
   )
 }
 

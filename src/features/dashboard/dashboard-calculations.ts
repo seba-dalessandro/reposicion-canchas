@@ -3,6 +3,7 @@ import type { ReplenishmentRecord } from '../replenishments/replenishment-servic
 export type ChartDatum = {
   name: string
   value: number
+  description?: string
 }
 
 export type DashboardMetrics = {
@@ -30,6 +31,12 @@ function toSortedData(map: Map<string, number>) {
     .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
 }
 
+function toSortedSkuData(map: Map<string, { description: string; value: number }>) {
+  return Array.from(map.entries())
+    .map(([name, item]) => ({ name, description: item.description, value: item.value }))
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'es', { numeric: true }))
+}
+
 function topOf(data: ChartDatum[]) {
   return data.length > 0 ? data[0] : null
 }
@@ -39,7 +46,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
   const palletsByCourt = new Map<string, number>()
   const palletsByForklift = new Map<string, number>()
   const palletsByDate = new Map<string, number>()
-  const palletsBySku = new Map<string, number>()
+  const palletsBySku = new Map<string, { description: string; value: number }>()
   const recordsByUser = new Map<string, number>()
   const palletsBySkuStatus = new Map<string, number>()
 
@@ -48,7 +55,12 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
     addToMap(palletsByCourt, row.court_name ?? 'Sin cancha', pallets)
     addToMap(palletsByForklift, row.forklift_name ?? 'Sin autoelevador', pallets)
     addToMap(palletsByDate, row.fecha_operativa, pallets)
-    addToMap(palletsBySku, `${row.sku_code ?? 'SKU'} - ${row.sku_description ?? 'Sin descripcion'}`, pallets)
+    const skuCode = row.sku_code ?? 'SKU'
+    const currentSku = palletsBySku.get(skuCode)
+    palletsBySku.set(skuCode, {
+      description: row.sku_description ?? 'Sin descripcion',
+      value: (currentSku?.value ?? 0) + pallets,
+    })
     addToMap(palletsBySkuStatus, row.sku_status === 'voided' ? 'SKU anulado' : 'SKU activo', pallets)
   })
 
@@ -58,7 +70,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
 
   const palletsByCourtData = toSortedData(palletsByCourt)
   const palletsByForkliftData = toSortedData(palletsByForklift)
-  const topSkus = toSortedData(palletsBySku).slice(0, 10)
+  const topSkus = toSortedSkuData(palletsBySku).slice(0, 10)
   const recordsByUserData = toSortedData(recordsByUser)
   const palletsBySkuStatusData = toSortedData(palletsBySkuStatus)
   const palletsByDateData = Array.from(palletsByDate.entries())
