@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 import {
   Activity,
-  CalendarClock,
+  CalendarRange,
   ClipboardList,
   Database as DatabaseIcon,
   Forklift,
@@ -63,6 +63,19 @@ function formatNumber(value: number) {
 
 function formatMb(value: number) {
   return new Intl.NumberFormat('es-AR', { maximumFractionDigits: value >= 10 ? 0 : 2 }).format(value)
+}
+
+function formatMonth(value: string) {
+  const [year, month] = value.split('-').map(Number)
+  if (!year || !month) return value
+
+  const label = new Intl.DateTimeFormat('es-AR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)))
+
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -128,12 +141,12 @@ export function DashboardPage() {
       icon: Forklift,
     },
     {
-      title: 'Ultimo registro cargado',
-      value: metrics.lastRecord ? formatDateTime(metrics.lastRecord.operation_created_at) : 'Sin datos',
-      detail: metrics.lastRecord
-        ? `${metrics.lastRecord.sku_code ?? 'SKU'} - ${metrics.lastRecord.court_name ?? 'Sin cancha'}`
-        : 'Aun no hay registros.',
-      icon: CalendarClock,
+      title: 'Mes con mas reposiciones',
+      value: metrics.topMonth ? formatMonth(metrics.topMonth.name) : 'Sin datos',
+      detail: metrics.topMonth
+        ? `${formatNumber(metrics.topMonth.value)} paletas`
+        : 'No hay registros activos.',
+      icon: CalendarRange,
     },
   ]
 
@@ -180,9 +193,11 @@ export function DashboardPage() {
           title="Dashboard operativo"
           description="Seguimiento de paletas repuestas en canchas de picking, con lectura filtrada por periodo, recursos, SKU, usuario y estado."
         />
-        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          Ultima actualizacion: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '-'}
-        </div>
+        {profile?.role === 'Superadministrador' ? (
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            Ultima actualizacion: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '-'}
+          </div>
+        ) : null}
       </div>
 
       {message ? (
@@ -534,7 +549,7 @@ function DocumentationSections() {
           <li>Paletas ingresadas = suma de `cantidad_paletas` con `status = active`.</li>
           <li>Registros del periodo = cantidad de registros filtrados.</li>
           <li>Ranking por cancha, SKU y autoelevador = suma de paletas activas agrupadas por dimension.</li>
-          <li>Ultimo registro = mayor `created_at` dentro del conjunto filtrado.</li>
+          <li>Mes con mas reposiciones = mes operativo con mayor suma de paletas activas.</li>
         </ul>
       </DocCard>
       <DocCard title="Diccionario de datos">

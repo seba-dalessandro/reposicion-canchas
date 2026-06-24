@@ -12,6 +12,7 @@ export type DashboardMetrics = {
   topCourt: ChartDatum | null
   topSku: ChartDatum | null
   topForklift: ChartDatum | null
+  topMonth: ChartDatum | null
   lastRecord: ReplenishmentRecord | null
   palletsByCourt: ChartDatum[]
   palletsByForklift: ChartDatum[]
@@ -83,6 +84,7 @@ export function calculateDashboardMetrics(rows: ReplenishmentRecord[]): Dashboar
     topCourt: topOf(palletsByCourtData),
     topSku: topOf(topSkus),
     topForklift: topOf(palletsByForkliftData),
+    topMonth: topOf(toSortedData(palletsByMonth)),
     lastRecord:
       rows
         .slice()
